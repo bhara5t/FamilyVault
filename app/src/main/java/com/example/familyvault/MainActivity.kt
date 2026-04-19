@@ -11,11 +11,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.familyvault.data.AppDatabase
 import com.example.familyvault.data.FamilyMember
 import com.example.familyvault.security.FileSecurity
@@ -29,7 +37,7 @@ class MainActivity : ComponentActivity() {
 
         val db = AppDatabase.getDatabase(this)
         setContent {
-                FamilyScreen(db)
+            FamilyScreen(db)
         }
     }
 }
@@ -41,12 +49,18 @@ fun FamilyScreen(db: AppDatabase) {
     val scope = rememberCoroutineScope()
 
     var name by remember { mutableStateOf("") }
+    var search by remember { mutableStateOf("") }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var category by remember { mutableStateOf("Aadhaar") }
 
     val members by db.familyDao().getAllMembers().collectAsState(initial = emptyList())
 
-    // 📁 File picker
+    val filteredMembers = members.filter {
+        val q = search.lowercase()
+        it.name.lowercase().contains(q) ||
+                it.category.lowercase().contains(q)
+    }
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -60,191 +74,217 @@ fun FamilyScreen(db: AppDatabase) {
     val categories = listOf("Aadhaar", "PAN", "Certificates", "Medical", "Insurance")
     var expanded by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.padding(16.dp)) {
+    // ✅ SCAFFOLD FIX
+    Scaffold { innerPadding ->
 
-        Text("Family Vault", style = MaterialTheme.typography.headlineMedium)
+        Column(
+            modifier = Modifier
+                .padding(innerPadding) // ✅ prevents overlap
+                .padding(16.dp)
+                .fillMaxSize()
+        ) {
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp)) // extra safe spacing
 
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
-        )
+            // 🌿 TITLE
+            Text(
+                "Family Vault",
+                fontSize = 26.sp,
+                color = Color(0xFF2E7D32)
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 🔽 CATEGORY DROPDOWN
-        Box {
-            Button(onClick = { expanded = true }) {
-                Text("Category: $category")
-            }
-
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
+            // 🟢 SECTION 1 → ADD DOCUMENT
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                elevation = CardDefaults.cardElevation(6.dp)
             ) {
-                categories.forEach {
-                    DropdownMenuItem(
-                        text = { Text(it) },
-                        onClick = {
-                            category = it
-                            expanded = false
-                        }
+                Column(modifier = Modifier.padding(16.dp)) {
+
+                    Text("Add Document", fontSize = 20.sp)
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Enter Name") },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-        Button(onClick = {
-            launcher.launch(arrayOf("*/*"))
-        }) {
-            Text("Pick Document")
-        }
+                    Button(
+                        onClick = { expanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Category: $category")
+                    }
 
-        selectedUri?.let {
-            Text("Selected: ${getFileName(context, it)}")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 🔒 ADD MEMBER WITH CATEGORY + ENCRYPTION
-        Button(
-            onClick = {
-                if (name.isNotBlank()  && selectedUri != null) {
-                    scope.launch {
-
-                        val fileName = getFileName(context, selectedUri!!)
-                        val extension = fileName.substringAfterLast('.', "")
-
-                        val inputStream =
-                            context.contentResolver.openInputStream(selectedUri!!)
-
-                        val tempFile = File(context.cacheDir, "temp_file.$extension")
-                        val encryptedFile = File(
-                            context.filesDir,
-                            "enc_${System.currentTimeMillis()}.$extension"
-                        )
-
-                        inputStream?.use { input ->
-                            FileOutputStream(tempFile).use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-
-                        FileSecurity.encryptFile(tempFile, encryptedFile)
-
-                        val exists = members.any {
-                            it.name.equals(name, ignoreCase = true) &&
-                                    it.category.equals(category, ignoreCase = true)
-                        }
-
-                        if (exists) {
-                            android.widget.Toast
-                                .makeText(context, "This document already exists for this person", android.widget.Toast.LENGTH_SHORT)
-                                .show()
-                        } else {
-
-                            db.familyDao().insertMember(
-                                FamilyMember(
-                                    name = name,
-                                    category = category,
-                                    documentUri = encryptedFile.absolutePath
-                                )
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        categories.forEach {
+                            DropdownMenuItem(
+                                text = { Text(it) },
+                                onClick = {
+                                    category = it
+                                    expanded = false
+                                }
                             )
-
-                            // ✅ Clear only when success
-                            name = ""
-                            selectedUri = null
                         }
                     }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Add Member")
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-        LazyColumn {
-            items(members) { member ->
+                    Button(
+                        onClick = { launcher.launch(arrayOf("*/*")) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Pick Document")
+                    }
 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-
-                        Text("${member.name} )")
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // ✅ SHOW CATEGORY
-                        Text(
-                            text = "Category: ${member.category}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "Encrypted File",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-
+                    selectedUri?.let {
                         Spacer(modifier = Modifier.height(8.dp))
+                        Text("Selected: ${getFileName(context, it)}")
+                    }
 
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                            // 🔓 OPEN
-                            Button(onClick = {
-                                try {
-                                    val encryptedFile = File(member.documentUri)
-
-                                    val extension = encryptedFile.extension
-                                    val decryptedFile =
-                                        File(context.cacheDir, "dec_temp.$extension")
-
-                                    FileSecurity.decryptFile(
-                                        encryptedFile,
-                                        decryptedFile
-                                    )
-
-                                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.provider",
-                                        decryptedFile
-                                    )
-
-                                    val intent =
-                                        Intent(context, PreviewActivity::class.java)
-                                    intent.putExtra("uri", uri.toString())
-                                    context.startActivity(intent)
-
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }) {
-                                Text("Open")
-                            }
-
-                            Button(onClick = {
+                    Button(
+                        onClick = {
+                            if (name.trim().isNotBlank() && selectedUri != null) {
                                 scope.launch {
-                                    db.familyDao().deleteMember(member)
+
+                                    val fileName = getFileName(context, selectedUri!!)
+                                    val extension = fileName.substringAfterLast('.', "")
+
+                                    val inputStream =
+                                        context.contentResolver.openInputStream(selectedUri!!)
+
+                                    val tempFile = File(context.cacheDir, "temp_file.$extension")
+                                    val encryptedFile = File(
+                                        context.filesDir,
+                                        "enc_${System.currentTimeMillis()}.$extension"
+                                    )
+
+                                    inputStream?.use { input ->
+                                        FileOutputStream(tempFile).use { output ->
+                                            input.copyTo(output)
+                                        }
+                                    }
+
+                                    FileSecurity.encryptFile(tempFile, encryptedFile)
+
+                                    val exists = members.any {
+                                        it.name.equals(name, true) &&
+                                                it.category.equals(category, true)
+                                    }
+
+                                    if (!exists) {
+                                        db.familyDao().insertMember(
+                                            FamilyMember(
+                                                name = name,
+                                                category = category,
+                                                documentUri = encryptedFile.absolutePath
+                                            )
+                                        )
+
+                                        name = ""
+                                        selectedUri = null
+                                    }
                                 }
-                            }) {
-                                Text("Delete")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Add Document")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 🔍 SEARCH
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                },
+                label = { Text("Search by name or category") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 📋 LIST
+            LazyColumn {
+                items(filteredMembers) { member ->
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        elevation = CardDefaults.cardElevation(4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+
+                            Text(member.name, fontSize = 20.sp)
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text("Category: ${member.category}")
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+
+                                Button(
+                                    onClick = {
+                                        val encryptedFile = File(member.documentUri)
+                                        val extension = encryptedFile.extension
+                                        val decryptedFile =
+                                            File(context.cacheDir, "dec_temp.$extension")
+
+                                        FileSecurity.decryptFile(encryptedFile, decryptedFile)
+
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.provider",
+                                            decryptedFile
+                                        )
+
+                                        val intent =
+                                            Intent(context, PreviewActivity::class.java)
+                                        intent.putExtra("uri", uri.toString())
+                                        context.startActivity(intent)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Open")
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            db.familyDao().deleteMember(member)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Delete")
+                                }
                             }
                         }
                     }

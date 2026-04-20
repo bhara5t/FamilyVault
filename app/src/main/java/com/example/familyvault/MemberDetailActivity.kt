@@ -8,9 +8,6 @@ import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,7 +17,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +26,7 @@ import androidx.core.content.FileProvider
 import com.example.familyvault.data.AppDatabase
 import com.example.familyvault.data.FamilyMember
 import com.example.familyvault.security.FileSecurity
+import com.example.familyvault.ui.theme.*
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -43,26 +40,27 @@ class MemberDetailActivity : ComponentActivity() {
         val db = AppDatabase.getDatabase(this)
 
         setContent {
-            // Dark Theme Color Scheme
             val darkColorScheme = darkColorScheme(
-                primary = Color(0xFF4CAF50),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFF1B5E20),
-                onPrimaryContainer = Color(0xFFA5D6A7),
-                secondary = Color(0xFF2196F3),
-                onSecondary = Color.White,
-                secondaryContainer = Color(0xFF0D47A1),
-                onSecondaryContainer = Color(0xFF90CAF9),
-                tertiary = Color(0xFFFF9800),
-                onTertiary = Color.Black,
-                background = Color(0xFF121212),
-                onBackground = Color(0xFFE0E0E0),
-                surface = Color(0xFF1E1E1E),
-                onSurface = Color(0xFFE0E0E0),
-                surfaceVariant = Color(0xFF2C2C2C),
-                onSurfaceVariant = Color(0xFFB0B0B0),
-                error = Color(0xFFCF6679),
-                onError = Color.Black
+                primary = DarkPrimary,
+                onPrimary = DarkOnPrimary,
+                primaryContainer = DarkPrimaryContainer,
+                onPrimaryContainer = DarkOnPrimaryContainer,
+                secondary = DarkSecondary,
+                onSecondary = DarkOnSecondary,
+                secondaryContainer = DarkSecondaryContainer,
+                onSecondaryContainer = DarkOnSecondaryContainer,
+                tertiary = DarkTertiary,
+                onTertiary = DarkOnTertiary,
+                tertiaryContainer = DarkTertiaryContainer,
+                onTertiaryContainer = DarkOnTertiaryContainer,
+                background = DarkBackground,
+                onBackground = DarkOnBackground,
+                surface = DarkSurface,
+                onSurface = DarkOnSurface,
+                surfaceVariant = DarkSurfaceVariant,
+                onSurfaceVariant = DarkOnSurfaceVariant,
+                error = DarkError,
+                onError = DarkOnError
             )
 
             MaterialTheme(colorScheme = darkColorScheme) {
@@ -78,10 +76,26 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val members by db.familyDao().getAllMembers().collectAsState(initial = emptyList())
-    val member = members.find { it.id == memberId }
-
+    // Load member once to avoid flickering
+    var member by remember { mutableStateOf<FamilyMember?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
     var isDownloading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(memberId) {
+        isLoading = true
+        member = db.familyDao().getMemberById(memberId)
+        isLoading = false
+    }
+
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
 
     if (member == null) {
         Box(
@@ -89,13 +103,15 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
             contentAlignment = Alignment.Center
         ) {
             Text(
-                "Member not found",
+                "Document not found",
                 color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 18.sp
             )
         }
         return
     }
+
+    val currentMember = member!!
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -140,7 +156,7 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
-                elevation = CardDefaults.cardElevation(8.dp)
+                elevation = CardDefaults.cardElevation(4.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -160,12 +176,16 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            member.name,
+                            currentMember.name,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -182,7 +202,7 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            member.category,
+                            currentMember.category,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -203,7 +223,7 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                     onClick = {
                         scope.launch {
                             try {
-                                val encryptedFile = File(member.documentUri)
+                                val encryptedFile = File(currentMember.documentUri)
                                 val extension = encryptedFile.extension
                                 val decryptedFile = File(context.cacheDir, "dec_temp.$extension")
 
@@ -219,33 +239,21 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                                 intent.putExtra("uri", uri.toString())
                                 context.startActivity(intent)
                             } catch (e: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    "Failed to open file",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(context, "Failed to open file", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp),
+                        .height(52.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Icon(
-                        Icons.Outlined.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "Open",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Text("Open", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 }
 
                 // Download Button
@@ -254,14 +262,13 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                         scope.launch {
                             isDownloading = true
                             try {
-                                val encryptedFile = File(member.documentUri)
+                                val encryptedFile = File(currentMember.documentUri)
                                 val extension = encryptedFile.extension
                                 val decryptedFile = File(context.cacheDir, "dec_temp.$extension")
 
                                 FileSecurity.decryptFile(encryptedFile, decryptedFile)
 
                                 val resolver = context.contentResolver
-
                                 val mimeType = when (extension.lowercase()) {
                                     "pdf" -> "application/pdf"
                                     "jpg", "jpeg" -> "image/jpeg"
@@ -270,52 +277,27 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                                 }
 
                                 val contentValues = ContentValues().apply {
-                                    val cleanName = member.name.replace("\\s+".toRegex(), "_")
-                                    val cleanCategory =
-                                        member.category.replace("\\s+".toRegex(), "_")
-                                    val timestamp = SimpleDateFormat(
-                                        "yyyyMMdd_HHmmss",
-                                        Locale.getDefault()
-                                    ).format(Date())
-
-                                    val fileName =
-                                        "${cleanName}_${cleanCategory}_$timestamp.$extension"
+                                    val cleanName = currentMember.name.replace("\\s+".toRegex(), "_")
+                                    val cleanCategory = currentMember.category.replace("\\s+".toRegex(), "_")
+                                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                    val fileName = "${cleanName}_${cleanCategory}_$timestamp.$extension"
 
                                     put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                                     put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                                    put(
-                                        MediaStore.MediaColumns.RELATIVE_PATH,
-                                        android.os.Environment.DIRECTORY_DOWNLOADS + "/FamilyVault"
-                                    )
+                                    put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/FamilyVault")
                                 }
 
-                                val uri = resolver.insert(
-                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                    contentValues
-                                )
-
+                                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                                 uri?.let {
-                                    val outputStream = resolver.openOutputStream(it)
-                                    val inputStream = decryptedFile.inputStream()
-
-                                    inputStream.copyTo(outputStream!!)
-
-                                    inputStream.close()
-                                    outputStream.close()
-
-                                    Toast.makeText(
-                                        context,
-                                        "Saved to Downloads",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    resolver.openOutputStream(it)?.use { outputStream ->
+                                        decryptedFile.inputStream().use { inputStream ->
+                                            inputStream.copyTo(outputStream)
+                                        }
+                                    }
+                                    Toast.makeText(context, "✅ Saved to Downloads/FamilyVault", Toast.LENGTH_LONG).show()
                                 }
                             } catch (e: Exception) {
-                                e.printStackTrace()
-                                Toast.makeText(
-                                    context,
-                                    "❌ Download failed",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(context, "❌ Download failed", Toast.LENGTH_SHORT).show()
                             } finally {
                                 isDownloading = false
                             }
@@ -323,7 +305,7 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp),
+                        .height(52.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondary
@@ -331,40 +313,29 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                     enabled = !isDownloading
                 ) {
                     if (isDownloading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                     } else {
-                        Icon(
-                            Icons.Outlined.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "Download",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Text("Download", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
             // Share Button
             OutlinedButton(
                 onClick = {
                     scope.launch {
                         try {
-                            val encryptedFile = File(member.documentUri)
+                            val encryptedFile = File(currentMember.documentUri)
                             val extension = encryptedFile.extension
                             val decryptedFile = File(context.cacheDir, "dec_temp.$extension")
 
                             FileSecurity.decryptFile(encryptedFile, decryptedFile)
 
-                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                            val uri = FileProvider.getUriForFile(
                                 context,
                                 "${context.packageName}.provider",
                                 decryptedFile
@@ -378,39 +349,21 @@ fun DetailScreen(db: AppDatabase, memberId: Int) {
                                     else -> "*/*"
                                 }
                                 putExtra(Intent.EXTRA_STREAM, uri)
-                                putExtra(Intent.EXTRA_TEXT, "")
                             }
-                            context.startActivity(
-                                Intent.createChooser(
-                                    shareIntent,
-                                    "Share Document"
-                                )
-                            )
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Document"))
                         } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                "Failed to share file",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(context, "Failed to share file", Toast.LENGTH_SHORT).show()
                         }
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(52.dp),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Icon(
-                    Icons.Outlined.Share,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
+                Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "Share",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Text("Share", fontSize = 16.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

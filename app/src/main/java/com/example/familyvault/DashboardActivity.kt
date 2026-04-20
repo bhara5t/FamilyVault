@@ -1,10 +1,15 @@
 package com.example.familyvault
 
+import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,7 +26,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,36 +35,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.familyvault.data.AppDatabase
 import com.example.familyvault.data.FamilyMember
+import com.example.familyvault.security.FileSecurity
 import com.example.familyvault.security.PinScreen
+import com.example.familyvault.ui.theme.*
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class DashboardActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
-            // Dark Theme Color Scheme
             val darkColorScheme = darkColorScheme(
-                primary = Color(0xFF4CAF50),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFF1B5E20),
-                onPrimaryContainer = Color(0xFFA5D6A7),
-                secondary = Color(0xFF2196F3),
-                onSecondary = Color.White,
-                secondaryContainer = Color(0xFF0D47A1),
-                onSecondaryContainer = Color(0xFF90CAF9),
-                tertiary = Color(0xFFFF9800),
-                onTertiary = Color.Black,
-                tertiaryContainer = Color(0xFFE65100),
-                onTertiaryContainer = Color(0xFFFFE0B2),
-                background = Color(0xFF121212),
-                onBackground = Color(0xFFE0E0E0),
-                surface = Color(0xFF1E1E1E),
-                onSurface = Color(0xFFE0E0E0),
-                surfaceVariant = Color(0xFF2C2C2C),
-                onSurfaceVariant = Color(0xFFB0B0B0),
-                error = Color(0xFFCF6679),
-                onError = Color.Black
+                primary = DarkPrimary,
+                onPrimary = DarkOnPrimary,
+                primaryContainer = DarkPrimaryContainer,
+                onPrimaryContainer = DarkOnPrimaryContainer,
+                secondary = DarkSecondary,
+                onSecondary = DarkOnSecondary,
+                secondaryContainer = DarkSecondaryContainer,
+                onSecondaryContainer = DarkOnSecondaryContainer,
+                tertiary = DarkTertiary,
+                onTertiary = DarkOnTertiary,
+                tertiaryContainer = DarkTertiaryContainer,
+                onTertiaryContainer = DarkOnTertiaryContainer,
+                background = DarkBackground,
+                onBackground = DarkOnBackground,
+                surface = DarkSurface,
+                onSurface = DarkOnSurface,
+                surfaceVariant = DarkSurfaceVariant,
+                onSurfaceVariant = DarkOnSurfaceVariant,
+                error = DarkError,
+                onError = DarkOnError
             )
 
             MaterialTheme(colorScheme = darkColorScheme) {
@@ -70,9 +83,7 @@ class DashboardActivity : ComponentActivity() {
                 if (unlocked) {
                     DashboardScreen(db)
                 } else {
-                    PinScreen {
-                        unlocked = true
-                    }
+                    PinScreen { unlocked = true }
                 }
             }
         }
@@ -86,15 +97,14 @@ fun DashboardScreen(db: AppDatabase) {
     val scope = rememberCoroutineScope()
     var search by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var isExporting by remember { mutableStateOf(false) }
 
     val members by db.familyDao().getAllMembers().collectAsState(initial = emptyList())
 
-    // Get unique categories
     val categories = remember(members) {
         listOf("All") + members.map { it.category }.distinct()
     }
 
-    // Filter members based on search and category
     val filteredMembers = remember(members, search, selectedCategory) {
         members.filter { member ->
             val matchesSearch = search.isEmpty() ||
@@ -115,27 +125,47 @@ fun DashboardScreen(db: AppDatabase) {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Outlined.Folder,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
+                        Icon(
+                            Icons.Outlined.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             "Family Vault",
-                            fontSize = 24.sp,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
+                    }
+                },
+                actions = {
+                    if (members.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    isExporting = true
+                                    exportAllDocuments(context, members)
+                                    isExporting = false
+                                }
+                            },
+                            enabled = !isExporting
+                        ) {
+                            if (isExporting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Outlined.Upload,
+                                    contentDescription = "Export",
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -151,15 +181,9 @@ fun DashboardScreen(db: AppDatabase) {
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = CircleShape,
-                modifier = Modifier
-                    .size(64.dp)
-                    .shadow(8.dp, CircleShape)
+                modifier = Modifier.size(60.dp)
             ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Add Document",
-                    modifier = Modifier.size(32.dp)
-                )
+                Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(28.dp))
             }
         }
     ) { innerPadding ->
@@ -167,55 +191,139 @@ fun DashboardScreen(db: AppDatabase) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .padding(horizontal = 16.dp)
         ) {
-            // Search Bar
-            SearchBar(
-                query = search,
-                onQueryChange = { search = it },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Category Chips
-            if (categories.isNotEmpty()) {
-                CategorySection(
-                    categories = categories,
-                    selectedCategory = selectedCategory,
-                    onCategorySelected = { selectedCategory = it }
+            // Search Bar
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    placeholder = { Text("Search documents...") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    trailingIcon = {
+                        if (search.isNotEmpty()) {
+                            IconButton(onClick = { search = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    singleLine = true
                 )
             }
 
-            // Documents Section Title
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Category Chips
+            if (categories.size > 1) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(categories) { category ->
+                        val isSelected = selectedCategory == category ||
+                                (category == "All" && selectedCategory == null)
+
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                selectedCategory = if (category == "All") null else category
+                            },
+                            label = { Text(category, fontSize = 15.sp) },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                selectedLabelColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.height(36.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Document Count
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 12.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Documents",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    "Documents",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-
                 if (filteredMembers.isNotEmpty()) {
                     Text(
-                        text = "${filteredMembers.size} items",
-                        fontSize = 15.sp,
+                        "${filteredMembers.size} item${if (filteredMembers.size > 1) "s" else ""}",
+                        fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(4.dp))
+
             // Documents List
             if (filteredMembers.isEmpty()) {
-                EmptyState(search.isNotEmpty() || selectedCategory != null)
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            if (search.isNotEmpty() || selectedCategory != null)
+                                Icons.Outlined.SearchOff
+                            else
+                                Icons.Outlined.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            if (search.isNotEmpty() || selectedCategory != null)
+                                "No matching documents"
+                            else
+                                "No documents yet",
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            if (search.isNotEmpty() || selectedCategory != null)
+                                "Try a different search"
+                            else
+                                "Tap + to add your first document",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(filteredMembers, key = { it.id }) { member ->
                         DocumentCard(
@@ -234,188 +342,41 @@ fun DashboardScreen(db: AppDatabase) {
 }
 
 @Composable
-fun SearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            placeholder = {
-                Text(
-                    "Search documents...",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 16.sp
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(
-                        onClick = { onQueryChange("") },
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Clear,
-                            contentDescription = "Clear",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent
-            ),
-            singleLine = true,
-            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
-        )
-    }
-}
-
-@Composable
-fun CategorySection(
-    categories: List<String>,
-    selectedCategory: String?,
-    onCategorySelected: (String?) -> Unit
-) {
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-    ) {
-        items(categories) { category ->
-            val isSelected = selectedCategory == category ||
-                    (category == "All" && selectedCategory == null)
-
-            FilterChip(
-                selected = isSelected,
-                onClick = {
-                    onCategorySelected(if (category == "All") null else category)
-                },
-                label = {
-                    Text(
-                        category,
-                        fontSize = 15.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                    )
-                },
-                shape = RoundedCornerShape(20.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                    selectedLabelColor = MaterialTheme.colorScheme.primary
-                ),
-                modifier = Modifier.height(40.dp)
-            )
-        }
-    }
-}
-
-@Composable
 fun DocumentCard(
     member: FamilyMember,
     onClick: () -> Unit
 ) {
-    val categoryColor = when (member.category) {
-        "Aadhaar" -> Color(0xFF4CAF50)
-        "PAN" -> Color(0xFF2196F3)
-        "Medical" -> Color(0xFFF44336)
-        "Certificates" -> Color(0xFFFF9800)
-        "Insurance" -> Color(0xFF9C27B0)
-        else -> MaterialTheme.colorScheme.primary
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Category Icon
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(categoryColor.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    when (member.category) {
-                        "Aadhaar" -> Icons.Outlined.Badge
-                        "PAN" -> Icons.Outlined.CreditCard
-                        "Medical" -> Icons.Outlined.LocalHospital
-                        "Certificates" -> Icons.Outlined.School
-                        "Insurance" -> Icons.Outlined.Security
-                        else -> Icons.Outlined.Description
-                    },
-                    contentDescription = null,
-                    tint = categoryColor,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     member.name,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Outlined.Label,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        member.category,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    member.category,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
             }
-
             Icon(
                 Icons.Outlined.ChevronRight,
                 contentDescription = null,
@@ -426,53 +387,81 @@ fun DocumentCard(
     }
 }
 
-@Composable
-fun EmptyState(isSearching: Boolean) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(140.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (isSearching) Icons.Outlined.SearchOff else Icons.Outlined.FolderOpen,
-                    contentDescription = null,
-                    modifier = Modifier.size(70.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
+// Export Function
+private suspend fun exportAllDocuments(context: Context, members: List<FamilyMember>) {
+    try {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val exportFileName = "FamilyVault_Backup_$timestamp.zip"
+
+        val metadataJson = JSONArray()
+        members.forEach { member ->
+            val obj = JSONObject()
+            obj.put("name", member.name)
+            obj.put("category", member.category)
+            obj.put("documentUri", member.documentUri)
+            metadataJson.put(obj)
+        }
+
+        val exportDir = File(context.cacheDir, "export_$timestamp")
+        exportDir.mkdirs()
+
+        val metadataFile = File(exportDir, "metadata.json")
+        FileOutputStream(metadataFile).use {
+            it.write(metadataJson.toString(2).toByteArray())
+        }
+
+        members.forEach { member ->
+            val encryptedFile = File(member.documentUri)
+            if (encryptedFile.exists()) {
+                val extension = encryptedFile.extension
+                val decryptedFile = File(exportDir, "${member.id}_${member.name.replace(" ", "_")}.$extension")
+                FileSecurity.decryptFile(encryptedFile, decryptedFile)
+            }
+        }
+
+        val zipFile = File(context.cacheDir, exportFileName)
+        ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
+            exportDir.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val entry = ZipEntry(file.relativeTo(exportDir).path)
+                    zipOut.putNextEntry(entry)
+                    file.inputStream().use { it.copyTo(zipOut) }
+                    zipOut.closeEntry()
+                }
+            }
+        }
+
+        val resolver = context.contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, exportFileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/zip")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/FamilyVault")
+        }
+
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+        uri?.let {
+            resolver.openOutputStream(it)?.use { outputStream ->
+                zipFile.inputStream().use { inputStream ->
+                    inputStream.copyTo(outputStream)
+                }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                if (isSearching) "No documents found" else "No documents yet",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                if (isSearching)
-                    "Try adjusting your search or filters"
-                else
-                    "Tap the + button to add your first document",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
+            Toast.makeText(
+                context,
+                "✅ Backup saved to Downloads/FamilyVault",
+                Toast.LENGTH_LONG
+            ).show()
         }
+
+        exportDir.deleteRecursively()
+        zipFile.delete()
+
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(
+            context,
+            "❌ Export failed",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }

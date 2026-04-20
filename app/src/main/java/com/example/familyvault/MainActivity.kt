@@ -79,12 +79,24 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Helper functions for categories
+fun saveCategories(context: Context, categories: List<String>) {
+    val prefs = context.getSharedPreferences("family_vault_prefs", Context.MODE_PRIVATE)
+    prefs.edit().putStringSet("categories", categories.toSet()).apply()
+}
+
+fun loadCategories(context: Context): List<String> {
+    val prefs = context.getSharedPreferences("family_vault_prefs", Context.MODE_PRIVATE)
+    val defaultCategories = setOf("Aadhaar", "PAN", "Certificates", "Medical", "Insurance")
+    val savedCategories = prefs.getStringSet("categories", defaultCategories) ?: defaultCategories
+    return savedCategories.toList().sorted()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FamilyScreen(db: AppDatabase) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("family_vault_prefs", Context.MODE_PRIVATE) }
 
     var name by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
@@ -94,10 +106,8 @@ fun FamilyScreen(db: AppDatabase) {
     var isImporting by remember { mutableStateOf(false) }
     var showManageCategoriesDialog by remember { mutableStateOf(false) }
 
-    // Load saved categories or use defaults
-    var categories by remember {
-        mutableStateOf(loadCategories(prefs))
-    }
+    // Load saved categories
+    var categories by remember { mutableStateOf(loadCategories(context)) }
 
     val members by db.familyDao().getAllMembers().collectAsState(initial = emptyList())
 
@@ -405,7 +415,7 @@ fun FamilyScreen(db: AppDatabase) {
             categories = categories,
             onCategoriesUpdated = { newCategories ->
                 categories = newCategories
-                saveCategories(prefs, newCategories)
+                saveCategories(context, newCategories)
                 if (category !in newCategories && newCategories.isNotEmpty()) {
                     category = newCategories.first()
                 }
@@ -566,18 +576,7 @@ fun ManageCategoriesDialog(
     )
 }
 
-// Save categories to SharedPreferences
-fun saveCategories(prefs: SharedPreferences, categories: List<String>) {
-    prefs.edit().putStringSet("categories", categories.toSet()).apply()
-}
-
-// Load categories from SharedPreferences
-fun loadCategories(prefs: SharedPreferences): List<String> {
-    val defaultCategories = setOf("Aadhaar", "PAN", "Certificates", "Medical", "Insurance")
-    val savedCategories = prefs.getStringSet("categories", defaultCategories) ?: defaultCategories
-    return savedCategories.toList().sorted()
-}
-
+// Import function
 private suspend fun importFromZip(
     context: android.content.Context,
     db: AppDatabase,
@@ -589,7 +588,6 @@ private suspend fun importFromZip(
             val importDir = File(context.cacheDir, "import_${System.currentTimeMillis()}")
             importDir.mkdirs()
 
-            // Extract ZIP
             context.contentResolver.openInputStream(zipUri)?.use { inputStream ->
                 ZipInputStream(inputStream).use { zipStream ->
                     var entry = zipStream.nextEntry
@@ -609,12 +607,11 @@ private suspend fun importFromZip(
                 }
             }
 
-            // Read metadata
             val metadataFile = File(importDir, "metadata.json")
             if (!metadataFile.exists()) {
                 importDir.deleteRecursively()
                 withContext(Dispatchers.Main) {
-                    onComplete(false, " Invalid backup file")
+                    onComplete(false, "Invalid backup file")
                 }
                 return@withContext
             }
@@ -630,13 +627,11 @@ private suspend fun importFromZip(
                 val name = obj.getString("name")
                 val category = obj.getString("category")
 
-                // Check if already exists
                 val exists = existingMembers.any {
                     it.name.equals(name, true) && it.category.equals(category, true)
                 }
 
                 if (!exists) {
-                    // Find the document file
                     val documentFile = importDir.listFiles()?.find {
                         it.name.startsWith("${obj.optInt("id", 0)}_") ||
                                 it.name.contains(name.replace(" ", "_"))
@@ -649,7 +644,6 @@ private suspend fun importFromZip(
                             "enc_${System.currentTimeMillis()}_$importedCount.$extension"
                         )
 
-                        // Encrypt and save
                         FileSecurity.encryptFile(documentFile, encryptedFile)
 
                         db.familyDao().insertMember(
@@ -664,7 +658,6 @@ private suspend fun importFromZip(
                 }
             }
 
-            // Cleanup
             importDir.deleteRecursively()
 
             withContext(Dispatchers.Main) {
@@ -677,7 +670,7 @@ private suspend fun importFromZip(
         } catch (e: Exception) {
             e.printStackTrace()
             withContext(Dispatchers.Main) {
-                onComplete(false, " Import failed: ${e.message}")
+                onComplete(false, "Import failed: ${e.message}")
             }
         }
     }

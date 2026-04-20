@@ -7,6 +7,6 @@ import androidx.room.PrimaryKey
 data class FamilyMember(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
-    val category: String,   // ✅ NEW FIELD
+    val category: String,
     val documentUri: String
 )

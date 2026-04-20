@@ -33,6 +33,26 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import coil.compose.rememberAsyncImagePainter
+import com.example.familyvault.ui.theme.DarkBackground
+import com.example.familyvault.ui.theme.DarkError
+import com.example.familyvault.ui.theme.DarkOnBackground
+import com.example.familyvault.ui.theme.DarkOnError
+import com.example.familyvault.ui.theme.DarkOnPrimary
+import com.example.familyvault.ui.theme.DarkOnPrimaryContainer
+import com.example.familyvault.ui.theme.DarkOnSecondary
+import com.example.familyvault.ui.theme.DarkOnSecondaryContainer
+import com.example.familyvault.ui.theme.DarkOnSurface
+import com.example.familyvault.ui.theme.DarkOnSurfaceVariant
+import com.example.familyvault.ui.theme.DarkOnTertiary
+import com.example.familyvault.ui.theme.DarkOnTertiaryContainer
+import com.example.familyvault.ui.theme.DarkPrimary
+import com.example.familyvault.ui.theme.DarkPrimaryContainer
+import com.example.familyvault.ui.theme.DarkSecondary
+import com.example.familyvault.ui.theme.DarkSecondaryContainer
+import com.example.familyvault.ui.theme.DarkSurface
+import com.example.familyvault.ui.theme.DarkSurfaceVariant
+import com.example.familyvault.ui.theme.DarkTertiary
+import com.example.familyvault.ui.theme.DarkTertiaryContainer
 import com.github.barteksc.pdfviewer.PDFView
 import com.github.barteksc.pdfviewer.util.FitPolicy
 import java.io.File
@@ -48,26 +68,26 @@ class PreviewActivity : ComponentActivity() {
         setContent {
             // Dark Theme Color Scheme
             val darkColorScheme = darkColorScheme(
-                primary = Color(0xFF4CAF50),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFF1B5E20),
-                onPrimaryContainer = Color(0xFFA5D6A7),
-                secondary = Color(0xFF2196F3),
-                onSecondary = Color.White,
-                secondaryContainer = Color(0xFF0D47A1),
-                onSecondaryContainer = Color(0xFF90CAF9),
-                tertiary = Color(0xFFFF9800),
-                onTertiary = Color.Black,
-                tertiaryContainer = Color(0xFFE65100),
-                onTertiaryContainer = Color(0xFFFFE0B2),
-                background = Color(0xFF121212),
-                onBackground = Color(0xFFE0E0E0),
-                surface = Color(0xFF1E1E1E),
-                onSurface = Color(0xFFE0E0E0),
-                surfaceVariant = Color(0xFF2C2C2C),
-                onSurfaceVariant = Color(0xFFB0B0B0),
-                error = Color(0xFFCF6679),
-                onError = Color.Black
+                primary = DarkPrimary,
+                onPrimary = DarkOnPrimary,
+                primaryContainer = DarkPrimaryContainer,
+                onPrimaryContainer = DarkOnPrimaryContainer,
+                secondary = DarkSecondary,
+                onSecondary = DarkOnSecondary,
+                secondaryContainer = DarkSecondaryContainer,
+                onSecondaryContainer = DarkOnSecondaryContainer,
+                tertiary = DarkTertiary,
+                onTertiary = DarkOnTertiary,
+                tertiaryContainer = DarkTertiaryContainer,
+                onTertiaryContainer = DarkOnTertiaryContainer,
+                background = DarkBackground,
+                onBackground = DarkOnBackground,
+                surface = DarkSurface,
+                onSurface = DarkOnSurface,
+                surfaceVariant = DarkSurfaceVariant,
+                onSurfaceVariant = DarkOnSurfaceVariant,
+                error = DarkError,
+                onError = DarkOnError
             )
 
             MaterialTheme(colorScheme = darkColorScheme) {

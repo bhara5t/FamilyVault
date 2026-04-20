@@ -3,14 +3,12 @@ package com.example.familyvault
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,7 +23,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -448,7 +445,7 @@ private suspend fun exportAllDocuments(context: Context, members: List<FamilyMem
 
             Toast.makeText(
                 context,
-                "✅ Backup saved to Downloads/FamilyVault",
+                "Backup saved to Downloads/FamilyVault",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -460,7 +457,7 @@ private suspend fun exportAllDocuments(context: Context, members: List<FamilyMem
         e.printStackTrace()
         Toast.makeText(
             context,
-            "❌ Export failed",
+            "Export failed",
             Toast.LENGTH_SHORT
         ).show()
     }

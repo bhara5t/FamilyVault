@@ -4,13 +4,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,9 +33,15 @@ import androidx.core.content.FileProvider
 import com.example.familyvault.data.AppDatabase
 import com.example.familyvault.data.FamilyMember
 import com.example.familyvault.security.FileSecurity
+import com.example.familyvault.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.util.zip.ZipInputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,16 +50,27 @@ class MainActivity : ComponentActivity() {
         val db = AppDatabase.getDatabase(this)
         setContent {
             val darkColorScheme = darkColorScheme(
-                primary = Color(0xFF4CAF50),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFF1B5E20),
-                background = Color(0xFF121212),
-                surface = Color(0xFF1E1E1E),
-                onBackground = Color(0xFFE0E0E0),
-                onSurface = Color(0xFFE0E0E0),
-                error = Color(0xFFCF6679)
+                primary = DarkPrimary,
+                onPrimary = DarkOnPrimary,
+                primaryContainer = DarkPrimaryContainer,
+                onPrimaryContainer = DarkOnPrimaryContainer,
+                secondary = DarkSecondary,
+                onSecondary = DarkOnSecondary,
+                secondaryContainer = DarkSecondaryContainer,
+                onSecondaryContainer = DarkOnSecondaryContainer,
+                tertiary = DarkTertiary,
+                onTertiary = DarkOnTertiary,
+                tertiaryContainer = DarkTertiaryContainer,
+                onTertiaryContainer = DarkOnTertiaryContainer,
+                background = DarkBackground,
+                onBackground = DarkOnBackground,
+                surface = DarkSurface,
+                onSurface = DarkOnSurface,
+                surfaceVariant = DarkSurfaceVariant,
+                onSurfaceVariant = DarkOnSurfaceVariant,
+                error = DarkError,
+                onError = DarkOnError
             )
-
             MaterialTheme(colorScheme = darkColorScheme) {
                 FamilyScreen(db)
             }
@@ -73,6 +89,7 @@ fun FamilyScreen(db: AppDatabase) {
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var category by remember { mutableStateOf("Aadhaar") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var isImporting by remember { mutableStateOf(false) }
 
     val members by db.familyDao().getAllMembers().collectAsState(initial = emptyList())
 
@@ -82,13 +99,27 @@ fun FamilyScreen(db: AppDatabase) {
                 it.category.lowercase().contains(q)
     }
 
-    val launcher = rememberLauncherForActivityResult(
+    val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, flags)
             selectedUri = it
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            scope.launch {
+                isImporting = true
+                importFromZip(context, db, it) { success, message ->
+                    isImporting = false
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -122,6 +153,27 @@ fun FamilyScreen(db: AppDatabase) {
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
+                    }
+                },
+                actions = {
+                    // Import Button
+                    IconButton(
+                        onClick = { importLauncher.launch(arrayOf("application/zip")) },
+                        enabled = !isImporting
+                    ) {
+                        if (isImporting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Outlined.Download,
+                                contentDescription = "Import",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -190,7 +242,7 @@ fun FamilyScreen(db: AppDatabase) {
             // Document Count
             if (filteredMembers.isNotEmpty()) {
                 Text(
-                    "${filteredMembers.size} document${if (filteredMembers.size > 1) "s" else ""}",
+                    "${filteredMembers.size} Document${if (filteredMembers.size > 1) "s" else ""}",
                     fontSize = 15.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -207,7 +259,7 @@ fun FamilyScreen(db: AppDatabase) {
                         Icon(
                             if (search.isNotEmpty()) Icons.Outlined.SearchOff else Icons.Outlined.FolderOpen,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
@@ -216,6 +268,14 @@ fun FamilyScreen(db: AppDatabase) {
                             fontSize = 16.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (search.isEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Tap + to add or ↓ to import",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
                     }
                 }
             } else {
@@ -228,7 +288,7 @@ fun FamilyScreen(db: AppDatabase) {
                             onOpen = {
                                 val encryptedFile = File(member.documentUri)
                                 val extension = encryptedFile.extension
-                                val decryptedFile = File(context.cacheDir, "dec_temp.$extension")
+                                val decryptedFile = File(context.cacheDir, "sample.$extension")
 
                                 FileSecurity.decryptFile(encryptedFile, decryptedFile)
 
@@ -266,7 +326,7 @@ fun FamilyScreen(db: AppDatabase) {
             onExpandedChange = { expanded = it },
             onCategorySelected = { category = it },
             selectedUri = selectedUri,
-            onPickDocument = { launcher.launch(arrayOf("*/*")) },
+            onPickDocument = { documentLauncher.launch(arrayOf("*/*")) },
             onDismiss = {
                 showAddDialog = false
                 name = ""
@@ -279,7 +339,7 @@ fun FamilyScreen(db: AppDatabase) {
                         val extension = fileName.substringAfterLast('.', "")
 
                         val inputStream = context.contentResolver.openInputStream(selectedUri!!)
-                        val tempFile = File(context.cacheDir, "temp_file.$extension")
+                        val tempFile = File(context.cacheDir, "sample.$extension")
                         val encryptedFile = File(
                             context.filesDir,
                             "enc_${System.currentTimeMillis()}.$extension"
@@ -292,6 +352,7 @@ fun FamilyScreen(db: AppDatabase) {
                         }
 
                         FileSecurity.encryptFile(tempFile, encryptedFile)
+                        tempFile.delete()
 
                         val exists = members.any {
                             it.name.equals(name, true) &&
@@ -306,6 +367,9 @@ fun FamilyScreen(db: AppDatabase) {
                                     documentUri = encryptedFile.absolutePath
                                 )
                             )
+                            Toast.makeText(context, "Document added", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Document already exists", Toast.LENGTH_SHORT).show()
                         }
 
                         showAddDialog = false
@@ -315,6 +379,112 @@ fun FamilyScreen(db: AppDatabase) {
                 }
             }
         )
+    }
+}
+
+// Import function
+private suspend fun importFromZip(
+    context: android.content.Context,
+    db: AppDatabase,
+    zipUri: Uri,
+    onComplete: (Boolean, String) -> Unit
+) {
+    withContext(Dispatchers.IO) {
+        try {
+            val importDir = File(context.cacheDir, "import_${System.currentTimeMillis()}")
+            importDir.mkdirs()
+
+            // Extract ZIP
+            context.contentResolver.openInputStream(zipUri)?.use { inputStream ->
+                ZipInputStream(inputStream).use { zipStream ->
+                    var entry = zipStream.nextEntry
+                    while (entry != null) {
+                        val file = File(importDir, entry.name)
+                        if (entry.isDirectory) {
+                            file.mkdirs()
+                        } else {
+                            file.parentFile?.mkdirs()
+                            FileOutputStream(file).use { outputStream ->
+                                zipStream.copyTo(outputStream)
+                            }
+                        }
+                        zipStream.closeEntry()
+                        entry = zipStream.nextEntry
+                    }
+                }
+            }
+
+            // Read metadata
+            val metadataFile = File(importDir, "metadata.json")
+            if (!metadataFile.exists()) {
+                importDir.deleteRecursively()
+                withContext(Dispatchers.Main) {
+                    onComplete(false, " Invalid backup file")
+                }
+                return@withContext
+            }
+
+            val metadataJson = metadataFile.readText()
+            val jsonArray = JSONArray(metadataJson)
+
+            var importedCount = 0
+            val existingMembers = db.familyDao().getAllMembersSync()
+
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val name = obj.getString("name")
+                val category = obj.getString("category")
+
+                // Check if already exists
+                val exists = existingMembers.any {
+                    it.name.equals(name, true) && it.category.equals(category, true)
+                }
+
+                if (!exists) {
+                    // Find the document file
+                    val documentFile = importDir.listFiles()?.find {
+                        it.name.startsWith("${obj.optInt("id", 0)}_") ||
+                                it.name.contains(name.replace(" ", "_"))
+                    }
+
+                    if (documentFile != null && documentFile.exists()) {
+                        val extension = documentFile.extension
+                        val encryptedFile = File(
+                            context.filesDir,
+                            "enc_${System.currentTimeMillis()}_$importedCount.$extension"
+                        )
+
+                        // Encrypt and save
+                        FileSecurity.encryptFile(documentFile, encryptedFile)
+
+                        db.familyDao().insertMember(
+                            FamilyMember(
+                                name = name,
+                                category = category,
+                                documentUri = encryptedFile.absolutePath
+                            )
+                        )
+                        importedCount++
+                    }
+                }
+            }
+
+            // Cleanup
+            importDir.deleteRecursively()
+
+            withContext(Dispatchers.Main) {
+                if (importedCount > 0) {
+                    onComplete(true, "Imported $importedCount documents")
+                } else {
+                    onComplete(true, "No new documents to import")
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            withContext(Dispatchers.Main) {
+                onComplete(false, " Import failed: ${e.message}")
+            }
+        }
     }
 }
 
@@ -341,7 +511,7 @@ fun DocumentCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     member.name,
-                    fontSize = 16.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -350,7 +520,7 @@ fun DocumentCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     member.category,
-                    fontSize = 13.sp,
+                    fontSize = 16.sp,
                     color = MaterialTheme.colorScheme.primary
                 )
             }

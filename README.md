@@ -29,7 +29,7 @@ A secure, offline-first document vault for storing and managing your family's im
 
 | Version | Release Date | Download |
 |---------|--------------|----------|
-| v1.0.0 | 2025-01-15 | [📦 FamilyVault-v1.0.0.apk](https://github.com/bhara5t/FamilyVault/releases/download/v1.0.0/FamilyVault-v1.0.0.apk) |
+| v1.0.0 | 2026-04-20 | [📦 FamilyVault-v1.0.0.apk](https://github.com/bhara5t/FamilyVault/releases/download/v1.0.0/FamilyVault-v1.0.0.apk) |
 
 > Check the [Releases Page](https://github.com/bhara5t/FamilyVault/releases) for all versions and release notes.
 

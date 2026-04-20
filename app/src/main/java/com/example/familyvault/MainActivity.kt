@@ -1,6 +1,8 @@
 package com.example.familyvault
 
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -40,7 +42,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.util.zip.ZipInputStream
 
 class MainActivity : ComponentActivity() {
@@ -83,6 +84,7 @@ class MainActivity : ComponentActivity() {
 fun FamilyScreen(db: AppDatabase) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("family_vault_prefs", Context.MODE_PRIVATE) }
 
     var name by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
@@ -90,6 +92,12 @@ fun FamilyScreen(db: AppDatabase) {
     var category by remember { mutableStateOf("Aadhaar") }
     var showAddDialog by remember { mutableStateOf(false) }
     var isImporting by remember { mutableStateOf(false) }
+    var showManageCategoriesDialog by remember { mutableStateOf(false) }
+
+    // Load saved categories or use defaults
+    var categories by remember {
+        mutableStateOf(loadCategories(prefs))
+    }
 
     val members by db.familyDao().getAllMembers().collectAsState(initial = emptyList())
 
@@ -123,7 +131,6 @@ fun FamilyScreen(db: AppDatabase) {
         }
     }
 
-    val categories = listOf("Aadhaar", "PAN", "Certificates", "Medical", "Insurance")
     var expanded by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -156,6 +163,17 @@ fun FamilyScreen(db: AppDatabase) {
                     }
                 },
                 actions = {
+                    // Manage Categories Button
+                    IconButton(
+                        onClick = { showManageCategoriesDialog = true }
+                    ) {
+                        Icon(
+                            Icons.Outlined.Category,
+                            contentDescription = "Manage Categories",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+
                     // Import Button
                     IconButton(
                         onClick = { importLauncher.launch(arrayOf("application/zip")) },
@@ -288,7 +306,7 @@ fun FamilyScreen(db: AppDatabase) {
                             onOpen = {
                                 val encryptedFile = File(member.documentUri)
                                 val extension = encryptedFile.extension
-                                val decryptedFile = File(context.cacheDir, "sample.$extension")
+                                val decryptedFile = File(context.cacheDir, "dec_temp.$extension")
 
                                 FileSecurity.decryptFile(encryptedFile, decryptedFile)
 
@@ -339,7 +357,7 @@ fun FamilyScreen(db: AppDatabase) {
                         val extension = fileName.substringAfterLast('.', "")
 
                         val inputStream = context.contentResolver.openInputStream(selectedUri!!)
-                        val tempFile = File(context.cacheDir, "sample.$extension")
+                        val tempFile = File(context.cacheDir, "temp_file.$extension")
                         val encryptedFile = File(
                             context.filesDir,
                             "enc_${System.currentTimeMillis()}.$extension"
@@ -380,9 +398,186 @@ fun FamilyScreen(db: AppDatabase) {
             }
         )
     }
+
+    // Manage Categories Dialog
+    if (showManageCategoriesDialog) {
+        ManageCategoriesDialog(
+            categories = categories,
+            onCategoriesUpdated = { newCategories ->
+                categories = newCategories
+                saveCategories(prefs, newCategories)
+                if (category !in newCategories && newCategories.isNotEmpty()) {
+                    category = newCategories.first()
+                }
+            },
+            onDismiss = { showManageCategoriesDialog = false }
+        )
+    }
 }
 
-// Import function
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ManageCategoriesDialog(
+    categories: List<String>,
+    onCategoriesUpdated: (List<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var newCategoryName by remember { mutableStateOf("") }
+    var showAddCategory by remember { mutableStateOf(false) }
+    var categoriesList by remember { mutableStateOf(categories) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Manage Categories",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                IconButton(onClick = { showAddCategory = true }) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add Category",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        },
+        text = {
+            Column {
+                if (categoriesList.isEmpty()) {
+                    Text(
+                        "No categories yet. Add one!",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 300.dp)
+                    ) {
+                        items(categoriesList) { cat ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        cat,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            categoriesList = categoriesList.filter { it != cat }
+                                        },
+                                        enabled = categoriesList.size > 1
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = if (categoriesList.size > 1)
+                                                Color(0xFFF44336)
+                                            else
+                                                Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Add Category Section
+                if (showAddCategory) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = newCategoryName,
+                        onValueChange = { newCategoryName = it },
+                        label = { Text("New Category Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = {
+                            showAddCategory = false
+                            newCategoryName = ""
+                        }) {
+                            Text("Cancel")
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val trimmedName = newCategoryName.trim()
+                                if (trimmedName.isNotBlank() && trimmedName !in categoriesList) {
+                                    categoriesList = categoriesList + trimmedName
+                                    showAddCategory = false
+                                    newCategoryName = ""
+                                }
+                            },
+                            enabled = newCategoryName.trim().isNotBlank() &&
+                                    newCategoryName.trim() !in categoriesList
+                        ) {
+                            Text("Add")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onCategoriesUpdated(categoriesList)
+                    onDismiss()
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
+}
+
+// Save categories to SharedPreferences
+fun saveCategories(prefs: SharedPreferences, categories: List<String>) {
+    prefs.edit().putStringSet("categories", categories.toSet()).apply()
+}
+
+// Load categories from SharedPreferences
+fun loadCategories(prefs: SharedPreferences): List<String> {
+    val defaultCategories = setOf("Aadhaar", "PAN", "Certificates", "Medical", "Insurance")
+    val savedCategories = prefs.getStringSet("categories", defaultCategories) ?: defaultCategories
+    return savedCategories.toList().sorted()
+}
+
 private suspend fun importFromZip(
     context: android.content.Context,
     db: AppDatabase,
